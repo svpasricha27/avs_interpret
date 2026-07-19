@@ -1,4 +1,4 @@
-# Adrenal Vein Sampling Interpretation Tool
+# Adrenal Vein Sampling Interpretation Tool 
 
 A single-page tool for computing and interpreting adrenal vein sampling (AVS)
 indices in primary aldosteronism: the selectivity index, lateralization index,
