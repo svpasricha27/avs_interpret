@@ -37,14 +37,15 @@ npm run preview    # serve the built output locally
 
 ## Project structure
 
+All files sit at the repository root (no `src/` folder):
+
 ```
 .
-├── index.html          # Vite entry HTML
+├── index.html          # Vite entry HTML (references ./main.jsx)
+├── main.jsx            # React entry point
+├── App.jsx             # the tool (self-contained component)
 ├── package.json
 ├── vite.config.js
-├── src
-│   ├── main.jsx        # React entry point
-│   └── App.jsx         # the tool (self-contained component)
 └── .gitignore
 ```
 
