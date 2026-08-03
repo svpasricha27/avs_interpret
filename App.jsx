@@ -369,21 +369,21 @@ function clinicalNote(ctx, T, tm, R) {
   const siParen = siBits.length ? " (" + siBits.join("; ") + ")" : "";
 
   if (!rightHasSI && !leftHasSI) {
-    parts.push("Selectivity indices could not be calculated because a peripheral reference value was not provided, so cannulation should be confirmed before the lateralization result is relied upon.");
+    parts.push("Selectivity indices could not be calculated because a peripheral reference value was not provided, so cannulation cannot be assessed from these values, which may affect how the lateralization result is interpreted.");
   } else if (rightFailed || leftFailed) {
     proceed = false;
     const fs = []; if (rightFailed) fs.push("right"); if (leftFailed) fs.push("left");
-    parts.push("Selectivity criteria were not met for the " + joinAnd(fs) + " adrenal vein" + (fs.length > 1 ? "s" : "") + siParen + ", so that gland was likely not cannulated and lateralization cannot be reliably assessed.");
+    parts.push("Selectivity criteria were not met for the " + joinAnd(fs) + " adrenal vein" + (fs.length > 1 ? "s" : "") + siParen + ". This may be because the gland was not cannulated, which can affect the reliability of the lateralization assessment.");
   } else if (!partialRefs.length) {
     parts.push("Selectivity criteria were met for both the right and left adrenal veins" + siParen + ".");
   } else if (fullRefs.length) {
-    parts.push("Selectivity criteria were met based on " + joinAnd(fullRefs) + ", though not using " + joinAnd(partialRefs) + siParen + ", so the interpretation proceeds with caution.");
+    parts.push("Selectivity criteria were met based on " + joinAnd(fullRefs) + ", though not using " + joinAnd(partialRefs) + siParen + "; this discordance may reflect cortisol co-secretion, and these indices may warrant cautious interpretation.");
   } else {
-    parts.push("Selectivity criteria were met for each adrenal vein using different reference hormones, the right based on " + joinAnd(rightSel) + " and the left based on " + joinAnd(leftSel) + siParen + ", so the interpretation proceeds with caution.");
+    parts.push("Selectivity criteria were met for each adrenal vein using different reference hormones, the right based on " + joinAnd(rightSel) + " and the left based on " + joinAnd(leftSel) + siParen + "; these indices may warrant cautious interpretation.");
   }
 
   if (!proceed) {
-    parts.push("Overall, the study is non-diagnostic owing to inadequate selectivity; either repeat adrenal vein sampling or empirical medical therapy with a mineralocorticoid receptor antagonist should be considered.");
+    parts.push("Overall, the study may be non-diagnostic owing to inadequate selectivity. If the clinician agrees the study is non-diagnostic, management options typically include empirical medical treatment or repeating adrenal vein sampling.");
     return parts.join(" ");
   }
 
@@ -392,9 +392,9 @@ function clinicalNote(ctx, T, tm, R) {
     const dom = sideLow(o.dominant);
     const ratio = " (aldosterone:" + refLabel(rk) + " " + f1(o.acR) + " on the right versus " + f1(o.acL) + " on the left)";
     if (o.lateralizing) {
-      parts.push("The " + timingLabel(tm) + " " + refLabel(rk) + "-referenced lateralization index was " + f1(o.LI) + ratio + ", which lateralizes to the " + dom + " adrenal vein, the " + dom + " gland being dominant.");
+      parts.push("The " + timingLabel(tm) + " " + refLabel(rk) + "-referenced lateralization index was " + f1(o.LI) + ratio + ", which is above the lateralizing threshold of " + o.liCut + ", with the " + dom + " adrenal vein dominant.");
     } else {
-      parts.push("The " + timingLabel(tm) + " " + refLabel(rk) + "-referenced lateralization index was " + f1(o.LI) + ratio + ", which is non-lateralizing; the " + dom + " adrenal vein was numerically dominant but did not reach the threshold of " + o.liCut + ", favouring bilateral disease.");
+      parts.push("The " + timingLabel(tm) + " " + refLabel(rk) + "-referenced lateralization index was " + f1(o.LI) + ratio + ", which is below the lateralizing threshold of " + o.liCut + "; the " + dom + " adrenal vein was numerically dominant but the index did not reach this threshold.");
     }
   });
 
@@ -404,17 +404,17 @@ function clinicalNote(ctx, T, tm, R) {
     const nonDom = sideLow(opp(d.dominant));
     const nonDomAC = d.dominant === "right" ? d.acL : d.acR;
     const csiRatio = nonDomAC != null && d.acP != null ? " (aldosterone:" + refLabel(decisionRk) + " " + f1(nonDomAC) + " in the " + nonDom + " adrenal vein versus " + f1(d.acP) + " peripherally)" : "";
-    parts.push("The " + timingLabel(tm) + " " + refLabel(decisionRk) + "-referenced contralateral suppression index was " + f2(d.CSI) + csiRatio + ", indicating " + (d.csiPos ? "suppression" : "a lack of suppression") + " of the non-dominant (" + nonDom + ") adrenal vein.");
+    parts.push("The " + timingLabel(tm) + " " + refLabel(decisionRk) + "-referenced contralateral suppression index was " + f2(d.CSI) + csiRatio + ", " + (d.csiPos ? "consistent with suppression" : "without suppression") + " of the non-dominant (" + nonDom + ") adrenal vein.");
   }
 
   if (R.cls === "uni") {
     const dom2 = sideLow(d.dominant);
-    const disc = R.discord ? " The cortisol and metanephrine indices are discordant, in keeping with autonomous cortisol co-secretion inflating adrenal vein cortisol, so the metanephrine reference was used to reach this conclusion." : "";
-    parts.push("Overall, the findings are consistent with unilateral aldosterone excess arising from the " + dom2 + " (dominant) adrenal gland, based on the " + refLabel(decisionRk) + "-referenced indices." + disc + " " + cap(dom2) + " adrenalectomy may be considered, with clinical and imaging correlation.");
+    const disc = R.discord ? " The cortisol and metanephrine indices are discordant, which may reflect autonomous cortisol co-secretion inflating adrenal vein cortisol; the metanephrine-referenced indices are shown here as they are not affected by cortisol secretion." : "";
+    parts.push("Overall, these " + refLabel(decisionRk) + "-referenced indices may be consistent with unilateral aldosterone excess involving the " + dom2 + " (dominant) adrenal gland." + disc + " These findings may be correlated with clinical and imaging data, and any management decision remains at the discretion of the treating clinician.");
   } else if (R.cls === "bi") {
-    parts.push("Overall, the findings are consistent with bilateral aldosterone secretion, and medical therapy with a mineralocorticoid receptor antagonist is generally preferred over adrenalectomy.");
+    parts.push("Overall, these indices may be more consistent with bilateral aldosterone secretion than with a single dominant gland. Interpretation and any management decision remain at the discretion of the treating clinician.");
   } else {
-    parts.push("Overall, the study is non-diagnostic owing to inadequate selectivity; either repeat adrenal vein sampling or empirical medical therapy with a mineralocorticoid receptor antagonist should be considered.");
+    parts.push("Overall, the study may be non-diagnostic owing to inadequate selectivity. If the clinician agrees the study is non-diagnostic, management options typically include empirical medical treatment or repeating adrenal vein sampling.");
   }
   return parts.join(" ");
 }
@@ -548,20 +548,20 @@ function StepSelectivity(T, tm, R) {
   const bothSel = R.st.right.sel && R.st.left.sel;
   const haveAny = R.st.right.has || R.st.left.has;
   let cls, note;
-  if (!haveAny) { cls = "warn"; note = "Enter adrenal and peripheral reference values to confirm cannulation."; }
+  if (!haveAny) { cls = "warn"; note = "Enter adrenal and peripheral reference values to assess cannulation."; }
   else if (bothSel) {
-    cls = "pass"; note = "Both catheters confirmed within the adrenal veins; proceed to lateralization.";
+    cls = "pass"; note = "Both selectivity indices are above threshold, consistent with adequate cannulation of both adrenal veins.";
     if (T.c && T.m) {
       const rescued = [];
       if (T.c.selR === false && T.m.selR === true) rescued.push("right");
       if (T.c.selL === false && T.m.selL === true) rescued.push("left");
-      if (rescued.length) note = "Cannulation confirmed. The " + rescued.join(" and ") + " cortisol SI sits below threshold (a recognised effect of cortisol co-secretion), but metanephrine confirms correct placement.";
+      if (rescued.length) note = "The " + rescued.join(" and ") + " cortisol selectivity index is below threshold, which may reflect cortisol co-secretion; the metanephrine selectivity index is above threshold, consistent with adequate placement.";
     }
   } else {
     cls = "fail"; const f = [];
     if (R.st.right.has && !R.st.right.sel) f.push("right");
     if (R.st.left.has && !R.st.left.sel) f.push("left");
-    note = "The " + f.join(" and ") + " sample is non-selective by every reference collected, so that gland is likely not cannulated and lateralization from it is unreliable.";
+    note = "The " + f.join(" and ") + " selectivity index is below threshold for every reference collected. This may be because the gland was not cannulated, which can affect the reliability of the lateralization assessment.";
   }
   const cut = T.c ? (tm === "pre" ? "cortisol >3" : "cortisol >5") : "";
   const cut2 = T.m ? (cut ? " · " : "") + "metanephrine >3" : "";
@@ -589,9 +589,9 @@ function StepLateralization(T, R) {
   });
   const d = R.d; let cls, note;
   if (!d || d.LI == null) { cls = "warn"; note = "Both adrenal aldosterone to reference ratios are needed to compute the lateralization index."; }
-  else if (R.discord) { cls = "warn"; note = "The cortisol and metanephrine indices disagree. Autonomous cortisol co-secretion distorts the aldosterone:cortisol ratio, so the metanephrine referenced index is the more reliable basis here."; }
-  else if (d.lateralizing) { cls = "pass"; note = "Lateralizes to the " + sideLow(d.dominant) + ", consistent with unilateral disease amenable to adrenalectomy on that side."; }
-  else { cls = "fail"; note = "Below the lateralization threshold, favouring bilateral disease and medical management."; }
+  else if (R.discord) { cls = "warn"; note = "The cortisol and metanephrine indices disagree, which may reflect autonomous cortisol co-secretion distorting the aldosterone:cortisol ratio; the metanephrine-referenced index is less affected by cortisol secretion."; }
+  else if (d.lateralizing) { cls = "pass"; note = "The index is above the lateralizing threshold, with the " + sideLow(d.dominant) + " adrenal vein dominant."; }
+  else { cls = "fail"; note = "The index is below the lateralizing threshold; the dominant side did not reach the threshold value."; }
   const cut = T.c ? "cortisol >4" : "";
   const cut2 = T.m ? (cut ? " · " : "") + "metanephrine >4.3" : "";
   return (
@@ -618,8 +618,8 @@ function StepCSI(T, R) {
   });
   const d = R.d; let cls, note;
   if (!d || d.CSI == null) { cls = "warn"; note = "The peripheral aldosterone to reference ratio and a dominant side are needed to compute contralateral suppression."; }
-  else if (d.csiPos) { cls = "pass"; note = "The non-dominant gland is suppressed (CSI below 1.0), reinforcing true unilateral excess."; }
-  else { cls = "warn"; note = "The non-dominant gland is not suppressed (CSI at or above 1.0). Interpret lateralization with caution, as this can reflect bilateral secretion or cortisol confounding."; }
+  else if (d.csiPos) { cls = "pass"; note = "The contralateral suppression index is below 1.0, consistent with suppression of the non-dominant gland."; }
+  else { cls = "warn"; note = "The contralateral suppression index is at or above 1.0, so the non-dominant gland is not suppressed; this may reflect bilateral secretion or cortisol confounding, and these indices may warrant cautious interpretation."; }
   return (
     <div className={"pstep " + cls} key="s3">
       <div className="node">{cls === "pass" ? "✓" : cls === "warn" ? "!" : "3"}</div>
@@ -632,17 +632,17 @@ function StepCSI(T, R) {
 function Verdict(T, tm, R) {
   const d = R.d; const tlabel = tm === "pre" ? "Pre-ACTH" : "Post-ACTH";
   let cls, vk, h3, p;
-  if (R.cls === "incomplete") { cls = "nd"; vk = "Incomplete"; h3 = "More data needed"; p = "Enter aldosterone and reference values for both adrenal veins and the peripheral sample to reach a conclusion."; }
-  else if (R.cls === "nd") { cls = "nd"; vk = "Non-diagnostic"; h3 = "Cannulation not confirmed"; p = "At least one adrenal vein is non-selective by every reference collected, so lateralization cannot be relied upon. Consider either repeat adrenal vein sampling or empirical medical therapy with a mineralocorticoid receptor antagonist."; }
+  if (R.cls === "incomplete") { cls = "nd"; vk = "Incomplete"; h3 = "More data needed"; p = "Enter aldosterone and reference values for both adrenal veins and the peripheral sample for the indices to be calculated."; }
+  else if (R.cls === "nd") { cls = "nd"; vk = "Selectivity not met"; h3 = "Cannulation may not be confirmed"; p = "At least one adrenal vein is non-selective by every reference collected, which may affect the reliability of the lateralization assessment. If the clinician agrees the study is non-diagnostic, management options typically include empirical medical treatment or repeating adrenal vein sampling."; }
   else if (R.cls === "uni") {
     cls = "uni"; vk = "Result · " + tlabel;
-    h3 = (<>Unilateral disease <span className="side-tag">{sideName(d.dominant).toUpperCase()}</span></>);
-    const basis = R.useMet ? "metanephrine referenced" : "cortisol referenced";
-    const csiTxt = d.csiPos ? " with contralateral suppression (CSI " + fmt(d.CSI, 2) + ")" : " (contralateral suppression not met, interpret with care)";
-    p = "The " + basis + " lateralization index of " + fmt(d.LI, d.LI >= 100 ? 0 : 1) + " exceeds threshold" + csiTxt + ", consistent with surgically correctable unilateral aldosterone excess on the " + sideLow(d.dominant) + ". Correlate with imaging and clinical context before adrenalectomy.";
+    h3 = (<>Lateralizing <span className="side-tag">{sideName(d.dominant).toUpperCase()}</span></>);
+    const basis = R.useMet ? "metanephrine-referenced" : "cortisol-referenced";
+    const csiTxt = d.csiPos ? " with contralateral suppression present (CSI " + fmt(d.CSI, 2) + ")" : ", though contralateral suppression was not met";
+    p = "The " + basis + " lateralization index of " + fmt(d.LI, d.LI >= 100 ? 0 : 1) + " is above the lateralizing threshold" + csiTxt + ". This may be consistent with unilateral aldosterone excess involving the " + sideLow(d.dominant) + " adrenal gland. These findings may be correlated with imaging and clinical context, and any management decision remains at the discretion of the treating clinician.";
   } else {
-    cls = "bi"; vk = "Result · " + tlabel; h3 = "Bilateral disease";
-    p = "The lateralization index (" + fmt(d.LI, d.LI >= 100 ? 0 : 1) + ") is below threshold, favouring bilateral adrenal hyperplasia. Medical management with a mineralocorticoid receptor antagonist is generally preferred.";
+    cls = "bi"; vk = "Result · " + tlabel; h3 = "Non-lateralizing";
+    p = "The lateralization index (" + fmt(d.LI, d.LI >= 100 ? 0 : 1) + ") is below the lateralizing threshold. This may be more consistent with bilateral aldosterone secretion than with a single dominant gland. Interpretation and any management decision remain at the discretion of the treating clinician.";
   }
   const showCaveat = R.useMet && R.discord;
   return (
@@ -655,7 +655,7 @@ function Verdict(T, tm, R) {
       {showCaveat && (
         <div className="caveat">
           <IconWarn />
-          <div className="ct"><b>Cortisol co-secretion caveat.</b> The aldosterone:cortisol indices disagree with the metanephrine indices. Autonomous cortisol production, present in roughly 15 to 30% of primary aldosteronism, inflates adrenal vein cortisol and can both mask true lateralization and lower the cortisol selectivity index. The conclusion above uses the <b>metanephrine</b> reference, which is unaffected by cortisol secretion.</div>
+          <div className="ct"><b>Cortisol co-secretion caveat.</b> The aldosterone:cortisol indices disagree with the metanephrine indices. Autonomous cortisol production, present in roughly 15 to 30% of primary aldosteronism, inflates adrenal vein cortisol and can both mask true lateralization and lower the cortisol selectivity index. The indices highlighted above use the <b>metanephrine</b> reference, which is unaffected by cortisol secretion.</div>
         </div>
       )}
     </React.Fragment>
@@ -762,7 +762,7 @@ export default function App() {
                 </div>
               </div>
             </div>
-            <p className="cfg-foot">Metanephrine reference is recommended when autonomous cortisol secretion is identified by a positive 1&nbsp;mg dexamethasone suppression test.</p>
+            <p className="cfg-foot">A metanephrine reference may be preferred when autonomous cortisol secretion is identified by a positive 1&nbsp;mg dexamethasone suppression test.</p>
             <div className="unit-inline">
               {[["aldo", "Aldosterone"], ["cortisol", "Cortisol"], ["met", "Metanephrine"]].map(([key, label]) => (
                 <div className="fld" key={key}>
