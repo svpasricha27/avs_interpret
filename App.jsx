@@ -247,13 +247,6 @@ function getV(values, tm, site, an) { return parseNum(values[tm + "_" + site + "
 function fmt(x, dp) { if (x == null || !isFinite(x)) return "—"; dp = dp == null ? 1 : dp; return x.toFixed(dp); }
 function f1(x) { return x == null || !isFinite(x) ? "-" : x.toFixed(1); }
 function f2(x) { return x == null || !isFinite(x) ? "-" : x.toFixed(2); }
-function sideName(d) { return d === "right" ? "Right" : d === "left" ? "Left" : "—"; }
-function sideLow(d) { return d === "right" ? "right" : d === "left" ? "left" : "the dominant side"; }
-function refLabel(rk) { return rk === "c" ? "cortisol" : "metanephrine"; }
-function timingLabel(tm) { return tm === "pre" ? "pre-ACTH" : "post-ACTH"; }
-function opp(d) { return d === "right" ? "left" : d === "left" ? "right" : "the contralateral"; }
-function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
-function joinAnd(a) { a = a.filter(Boolean); if (a.length <= 1) return a[0] || ""; if (a.length === 2) return a[0] + " and " + a[1]; return a.slice(0, -1).join(", ") + ", and " + a[a.length - 1]; }
 function activeTimings(config) { const a = []; if (config.pre) a.push("pre"); if (config.post) a.push("post"); return a; }
 
 /* ============================ Compute ============================ */
@@ -298,127 +291,6 @@ function computeTiming(values, config, tm) {
   res.hasData = (res.c && res.c.hasAny) || (res.m && res.m.hasAny);
   return res;
 }
-function sideStatus(T) {
-  const st = { right: { has: false, sel: false }, left: { has: false, sel: false } };
-  ["c", "m"].forEach((rk) => {
-    const o = T[rk]; if (!o) return;
-    if (o.siR != null) { st.right.has = true; if (o.selR) st.right.sel = true; }
-    if (o.siL != null) { st.left.has = true; if (o.selL) st.left.sel = true; }
-  });
-  return st;
-}
-function interpretResult(T) {
-  const decision = T.c ? T.c : T.m;
-  const discord =
-    T.c && T.m && T.c.LI != null && T.m.LI != null &&
-    (T.c.lateralizing !== T.m.lateralizing || (T.c.lateralizing && T.m.lateralizing && T.c.dominant !== T.m.dominant));
-  const useMet = discord && T.m;
-  const d = useMet ? T.m : decision;
-  const st = sideStatus(T);
-  const blocked = (st.right.has && !st.right.sel) || (st.left.has && !st.left.sel);
-  let cls;
-  if (!d || d.LI == null) cls = "incomplete";
-  else if (blocked) cls = "nd";
-  else if (d.lateralizing) cls = "uni";
-  else cls = "bi";
-  return { decision, d, useMet, discord, st, blocked, cls };
-}
-
-/* ============================ Clinical note ============================ */
-function refHasAnyData(ctx, rk) {
-  let found = false;
-  activeTimings(ctx.config).forEach((tm) =>
-    ["rav", "lav", "periph"].forEach((s) => { if (getV(ctx.values, tm, s, rk) != null) found = true; })
-  );
-  return found;
-}
-function clinicalNote(ctx, T, tm, R) {
-  const { values, config } = ctx;
-  const parts = [];
-
-  const postHas = config.post && computeTiming(values, config, "post").hasData;
-  const preHas = config.pre && computeTiming(values, config, "pre").hasData;
-  const timingPhrase = preHas && postHas ? "both before and after ACTH (cosyntropin) stimulation"
-    : postHas ? "with ACTH (cosyntropin) stimulation"
-    : preHas ? "without ACTH stimulation" : "";
-  const mRefs = [];
-  if (config.cortisol && refHasAnyData(ctx, "c")) mRefs.push("cortisol");
-  if (config.met && refHasAnyData(ctx, "m")) mRefs.push("metanephrine");
-  if (!mRefs.length) { if (config.cortisol) mRefs.push("cortisol"); if (config.met) mRefs.push("metanephrine"); }
-  const refPhrase = mRefs.length > 1 ? joinAnd(mRefs) + " as reference hormones" : (mRefs[0] || "cortisol") + " as the reference hormone";
-  parts.push("Adrenal vein sampling was performed " + timingPhrase + " using " + refPhrase + ".");
-
-  const rightSel = [], rightFail = [], leftSel = [], leftFail = [], fullRefs = [], partialRefs = [];
-  ["c", "m"].forEach((rk) => {
-    const o = T[rk]; if (!o) return; const lbl = refLabel(rk);
-    const hasR = o.siR != null, hasL = o.siL != null;
-    if (hasR) (o.selR ? rightSel : rightFail).push(lbl);
-    if (hasL) (o.selL ? leftSel : leftFail).push(lbl);
-    if (hasR && hasL) { if (o.selR && o.selL) fullRefs.push(lbl); else if (o.selR === false || o.selL === false) partialRefs.push(lbl); }
-  });
-  const rightHasSI = rightSel.length || rightFail.length, leftHasSI = leftSel.length || leftFail.length;
-  const rightConfirmed = rightSel.length > 0, leftConfirmed = leftSel.length > 0;
-  const rightFailed = rightHasSI && !rightConfirmed, leftFailed = leftHasSI && !leftConfirmed;
-  let proceed = true;
-
-  const siBits = [];
-  ["c", "m"].forEach((rk) => {
-    const o = T[rk]; if (!o || o.siR == null || o.siL == null) return;
-    siBits.push(refLabel(rk) + " selectivity index right " + f1(o.siR) + ", left " + f1(o.siL));
-  });
-  const siParen = siBits.length ? " (" + siBits.join("; ") + ")" : "";
-
-  if (!rightHasSI && !leftHasSI) {
-    parts.push("Selectivity indices could not be calculated because a peripheral reference value was not provided, so cannulation cannot be assessed from these values, which may affect how the lateralization result is interpreted.");
-  } else if (rightFailed || leftFailed) {
-    proceed = false;
-    const fs = []; if (rightFailed) fs.push("right"); if (leftFailed) fs.push("left");
-    parts.push("Selectivity criteria were not met for the " + joinAnd(fs) + " adrenal vein" + (fs.length > 1 ? "s" : "") + siParen + ". This may be because the gland was not cannulated, which can affect the reliability of the lateralization assessment.");
-  } else if (!partialRefs.length) {
-    parts.push("Selectivity criteria were met for both the right and left adrenal veins" + siParen + ".");
-  } else if (fullRefs.length) {
-    parts.push("Selectivity criteria were met based on " + joinAnd(fullRefs) + ", though not using " + joinAnd(partialRefs) + siParen + "; this discordance may reflect cortisol co-secretion, and these indices may warrant cautious interpretation.");
-  } else {
-    parts.push("Selectivity criteria were met for each adrenal vein using different reference hormones, the right based on " + joinAnd(rightSel) + " and the left based on " + joinAnd(leftSel) + siParen + "; these indices may warrant cautious interpretation.");
-  }
-
-  if (!proceed) {
-    parts.push("Overall, the study may be non-diagnostic owing to inadequate selectivity. If the clinician agrees the study is non-diagnostic, management options typically include empirical medical treatment or repeating adrenal vein sampling.");
-    return parts.join(" ");
-  }
-
-  ["c", "m"].forEach((rk) => {
-    const o = T[rk]; if (!o || o.LI == null) return;
-    const dom = sideLow(o.dominant);
-    const ratio = " (aldosterone:" + refLabel(rk) + " " + f1(o.acR) + " on the right versus " + f1(o.acL) + " on the left)";
-    if (o.lateralizing) {
-      parts.push("The " + timingLabel(tm) + " " + refLabel(rk) + "-referenced lateralization index was " + f1(o.LI) + ratio + ", which is above the lateralizing threshold of " + o.liCut + ", with the " + dom + " adrenal vein dominant.");
-    } else {
-      parts.push("The " + timingLabel(tm) + " " + refLabel(rk) + "-referenced lateralization index was " + f1(o.LI) + ratio + ", which is below the lateralizing threshold of " + o.liCut + "; the " + dom + " adrenal vein was numerically dominant but the index did not reach this threshold.");
-    }
-  });
-
-  const decisionRk = R.useMet ? "m" : (T.c ? "c" : "m");
-  const d = R.d;
-  if (d && d.CSI != null) {
-    const nonDom = sideLow(opp(d.dominant));
-    const nonDomAC = d.dominant === "right" ? d.acL : d.acR;
-    const csiRatio = nonDomAC != null && d.acP != null ? " (aldosterone:" + refLabel(decisionRk) + " " + f1(nonDomAC) + " in the " + nonDom + " adrenal vein versus " + f1(d.acP) + " peripherally)" : "";
-    parts.push("The " + timingLabel(tm) + " " + refLabel(decisionRk) + "-referenced contralateral suppression index was " + f2(d.CSI) + csiRatio + ", " + (d.csiPos ? "consistent with suppression" : "without suppression") + " of the non-dominant (" + nonDom + ") adrenal vein.");
-  }
-
-  if (R.cls === "uni") {
-    const dom2 = sideLow(d.dominant);
-    const disc = R.discord ? " The cortisol and metanephrine indices are discordant, which may reflect autonomous cortisol co-secretion inflating adrenal vein cortisol; the metanephrine-referenced indices are shown here as they are not affected by cortisol secretion." : "";
-    parts.push("Overall, these " + refLabel(decisionRk) + "-referenced indices may be consistent with unilateral aldosterone excess involving the " + dom2 + " (dominant) adrenal gland." + disc + " These findings may be correlated with clinical and imaging data, and any management decision remains at the discretion of the treating clinician.");
-  } else if (R.cls === "bi") {
-    parts.push("Overall, these indices may be more consistent with bilateral aldosterone secretion than with a single dominant gland. Interpretation and any management decision remain at the discretion of the treating clinician.");
-  } else {
-    parts.push("Overall, the study may be non-diagnostic owing to inadequate selectivity. If the clinician agrees the study is non-diagnostic, management options typically include empirical medical treatment or repeating adrenal vein sampling.");
-  }
-  return parts.join(" ");
-}
-
 /* ============================ Copy table ============================ */
 function fmtTable(headers, rows, aligns) {
   const w = headers.map((h, c) => {
@@ -444,13 +316,13 @@ function tableCopyText(ctx) {
       const headers = ["Site", "Aldosterone (" + aU + ")", isMet ? "Metanephrine (" + mU + ")" : "Cortisol (" + cU + ")", isMet ? "A:M" : "A:C", "SI"];
       const aligns = ["l", "r", "r", "r", "r"];
       const rows = [
-        ["Right AV", vv(o.rav.a), vr(o.rav.r, o.less.rr), f1(o.acR), f1(o.siR)],
-        ["Left AV", vv(o.lav.a), vr(o.lav.r, o.less.lr), f1(o.acL), f1(o.siL)],
+        ["Right adrenal vein", vv(o.rav.a), vr(o.rav.r, o.less.rr), f1(o.acR), f1(o.siR)],
+        ["Left adrenal vein", vv(o.lav.a), vr(o.lav.r, o.less.lr), f1(o.acL), f1(o.siL)],
         ["Peripheral", vv(o.periph.a), vr(o.periph.r, o.less.rp), f1(o.acP), ""],
       ];
       out.push(isMet ? "Metanephrine reference" : "Cortisol reference");
       fmtTable(headers, rows, aligns).forEach((l) => out.push(l));
-      out.push("Dominant: " + (o.dominant ? sideName(o.dominant) : "-") + "     LI: " + f1(o.LI) + "     CSI: " + f2(o.CSI), "");
+      out.push("LI: " + f1(o.LI) + "     CSI: " + f2(o.CSI), "");
     });
   });
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
@@ -469,7 +341,6 @@ const IconCheck = () => (<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 
 const IconCopy = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>);
 const IconFile = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>);
 const IconTrash = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>);
-const IconWarn = () => (<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>);
 const IconLink = () => (<svg viewBox="0 0 24 24"><path d="M9 17H7A5 5 0 0 1 7 7h1" /><path d="M15 7h2a5 5 0 0 1 0 10h-1" /><line x1="8" y1="12" x2="16" y2="12" /></svg>);
 
 /* ============================ Small render helpers ============================ */
@@ -482,8 +353,8 @@ function EmptyState({ title, sub }) {
 function RefResult(o, rk) {
   const isMet = rk === "m";
   const rows = [
-    { label: "Right AV", a: o.rav.a, r: o.rav.r, ac: o.acR, si: o.siR, dom: o.dominant === "right", periph: false, less: o.less.rr },
-    { label: "Left AV", a: o.lav.a, r: o.lav.r, ac: o.acL, si: o.siL, dom: o.dominant === "left", periph: false, less: o.less.lr },
+    { label: "Right adrenal vein", a: o.rav.a, r: o.rav.r, ac: o.acR, si: o.siR, dom: o.dominant === "right", periph: false, less: o.less.rr },
+    { label: "Left adrenal vein", a: o.lav.a, r: o.lav.r, ac: o.acL, si: o.siL, dom: o.dominant === "left", periph: false, less: o.less.lr },
     { label: "Peripheral", a: o.periph.a, r: o.periph.r, ac: o.acP, si: null, dom: false, periph: true, less: o.less.rp },
   ];
   return (
@@ -515,149 +386,9 @@ function RefResult(o, rk) {
         </table>
       </div>
       <div className={"summary-row" + (isMet ? " met" : "")}>
-        <Metric k="Dominant" v={o.dominant ? sideName(o.dominant) : "—"} />
         <Metric k="LI" v={o.LI != null ? fmt(o.LI, o.LI >= 100 ? 0 : 1) : "—"} sub={">" + o.liCut} />
         <Metric k="CSI" v={o.CSI != null ? fmt(o.CSI, 2) : "—"} sub={"<1.0"} />
-        {o.lateralizing != null &&
-          (o.lateralizing
-            ? <span className="pill lat">{"Lateralizes " + sideName(o.dominant)}</span>
-            : <span className="pill nonlat">Non-lateralizing</span>)}
       </div>
-    </React.Fragment>
-  );
-}
-
-/* ============================ Interpretation steps ============================ */
-function StepSelectivity(T, tm, R) {
-  const lines = [];
-  ["c", "m"].forEach((rk) => {
-    const o = T[rk]; if (!o) return;
-    [["right", "selR", "siR"], ["left", "selL", "siL"]].forEach(([side, selK, siK]) => {
-      const sel = o[selK], si = o[siK]; if (si == null) return;
-      const less = (side === "right" ? o.less.rr : o.less.lr) || o.less.rp;
-      lines.push(
-        <div className="pline" key={rk + side}>
-          <span className="lab">{side === "right" ? "Right AV" : "Left AV"}</span>
-          <span className="figs">SI {(less ? ">" : "") + fmt(si, si >= 100 ? 0 : 1)}</span>
-          {rk === "m" && <span className="tag met">metanephrine</span>}
-          {sel ? <span className="tag pass">selective</span> : <span className="tag fail">below {o.siCut}</span>}
-        </div>
-      );
-    });
-  });
-  const bothSel = R.st.right.sel && R.st.left.sel;
-  const haveAny = R.st.right.has || R.st.left.has;
-  let cls, note;
-  if (!haveAny) { cls = "warn"; note = "Enter adrenal and peripheral reference values to assess cannulation."; }
-  else if (bothSel) {
-    cls = "pass"; note = "Both selectivity indices are above threshold, consistent with adequate cannulation of both adrenal veins.";
-    if (T.c && T.m) {
-      const rescued = [];
-      if (T.c.selR === false && T.m.selR === true) rescued.push("right");
-      if (T.c.selL === false && T.m.selL === true) rescued.push("left");
-      if (rescued.length) note = "The " + rescued.join(" and ") + " cortisol selectivity index is below threshold, which may reflect cortisol co-secretion; the metanephrine selectivity index is above threshold, consistent with adequate placement.";
-    }
-  } else {
-    cls = "fail"; const f = [];
-    if (R.st.right.has && !R.st.right.sel) f.push("right");
-    if (R.st.left.has && !R.st.left.sel) f.push("left");
-    note = "The " + f.join(" and ") + " selectivity index is below threshold for every reference collected. This may be because the gland was not cannulated, which can affect the reliability of the lateralization assessment.";
-  }
-  const cut = T.c ? (tm === "pre" ? "cortisol >3" : "cortisol >5") : "";
-  const cut2 = T.m ? (cut ? " · " : "") + "metanephrine >3" : "";
-  return (
-    <div className={"pstep " + cls} key="s1">
-      <div className="node">{cls === "pass" ? "✓" : cls === "fail" ? "!" : "1"}</div>
-      <h3>Selectivity <span className="cut">{cut + cut2}</span></h3>
-      <div className="lines">{lines.length ? lines : <div className="pnote">No selectivity values yet.</div>}</div>
-      <p className="pnote">{note}</p>
-    </div>
-  );
-}
-function StepLateralization(T, R) {
-  const lines = [];
-  ["c", "m"].forEach((rk) => {
-    const o = T[rk]; if (!o || o.LI == null) return; const isMet = rk === "m";
-    lines.push(
-      <div className="pline" key={rk}>
-        <span className="lab">{isMet ? "aldosterone:metanephrine" : "aldosterone:cortisol"} LI</span>
-        <span className="figs">{fmt(o.LI, o.LI >= 100 ? 0 : 1)}</span>
-        {isMet && <span className="tag met">metanephrine</span>}
-        {o.lateralizing ? <span className="tag pass">{"lateralizes " + sideName(o.dominant)}</span> : <span className="tag">non-lateralizing</span>}
-      </div>
-    );
-  });
-  const d = R.d; let cls, note;
-  if (!d || d.LI == null) { cls = "warn"; note = "Both adrenal aldosterone to reference ratios are needed to compute the lateralization index."; }
-  else if (R.discord) { cls = "warn"; note = "The cortisol and metanephrine indices disagree, which may reflect autonomous cortisol co-secretion distorting the aldosterone:cortisol ratio; the metanephrine-referenced index is less affected by cortisol secretion."; }
-  else if (d.lateralizing) { cls = "pass"; note = "The index is above the lateralizing threshold, with the " + sideLow(d.dominant) + " adrenal vein dominant."; }
-  else { cls = "fail"; note = "The index is below the lateralizing threshold; the dominant side did not reach the threshold value."; }
-  const cut = T.c ? "cortisol >4" : "";
-  const cut2 = T.m ? (cut ? " · " : "") + "metanephrine >4.3" : "";
-  return (
-    <div className={"pstep " + cls} key="s2">
-      <div className="node">{cls === "pass" ? "✓" : cls === "fail" ? "×" : cls === "warn" ? "!" : "2"}</div>
-      <h3>Lateralization <span className="cut">{cut + cut2}</span></h3>
-      <div className="lines">{lines.length ? lines : <div className="pnote">No LI yet.</div>}</div>
-      <p className="pnote">{note}</p>
-    </div>
-  );
-}
-function StepCSI(T, R) {
-  const lines = [];
-  ["c", "m"].forEach((rk) => {
-    const o = T[rk]; if (!o || o.CSI == null) return; const isMet = rk === "m";
-    lines.push(
-      <div className="pline" key={rk}>
-        <span className="lab">{isMet ? "metanephrine" : "cortisol"} CSI</span>
-        <span className="figs">{fmt(o.CSI, 2)}</span>
-        {isMet && <span className="tag met">metanephrine</span>}
-        {o.csiPos ? <span className="tag pass">suppressed</span> : <span className="tag warn">not suppressed</span>}
-      </div>
-    );
-  });
-  const d = R.d; let cls, note;
-  if (!d || d.CSI == null) { cls = "warn"; note = "The peripheral aldosterone to reference ratio and a dominant side are needed to compute contralateral suppression."; }
-  else if (d.csiPos) { cls = "pass"; note = "The contralateral suppression index is below 1.0, consistent with suppression of the non-dominant gland."; }
-  else { cls = "warn"; note = "The contralateral suppression index is at or above 1.0, so the non-dominant gland is not suppressed; this may reflect bilateral secretion or cortisol confounding, and these indices may warrant cautious interpretation."; }
-  return (
-    <div className={"pstep " + cls} key="s3">
-      <div className="node">{cls === "pass" ? "✓" : cls === "warn" ? "!" : "3"}</div>
-      <h3>Contralateral suppression <span className="cut">{"CSI <1.0"}</span></h3>
-      <div className="lines">{lines.length ? lines : <div className="pnote">No CSI yet.</div>}</div>
-      <p className="pnote">{note}</p>
-    </div>
-  );
-}
-function Verdict(T, tm, R) {
-  const d = R.d; const tlabel = tm === "pre" ? "Pre-ACTH" : "Post-ACTH";
-  let cls, vk, h3, p;
-  if (R.cls === "incomplete") { cls = "nd"; vk = "Incomplete"; h3 = "More data needed"; p = "Enter aldosterone and reference values for both adrenal veins and the peripheral sample for the indices to be calculated."; }
-  else if (R.cls === "nd") { cls = "nd"; vk = "Selectivity not met"; h3 = "Cannulation may not be confirmed"; p = "At least one adrenal vein is non-selective by every reference collected, which may affect the reliability of the lateralization assessment. If the clinician agrees the study is non-diagnostic, management options typically include empirical medical treatment or repeating adrenal vein sampling."; }
-  else if (R.cls === "uni") {
-    cls = "uni"; vk = "Result · " + tlabel;
-    h3 = (<>Lateralizing <span className="side-tag">{sideName(d.dominant).toUpperCase()}</span></>);
-    const basis = R.useMet ? "metanephrine-referenced" : "cortisol-referenced";
-    const csiTxt = d.csiPos ? " with contralateral suppression present (CSI " + fmt(d.CSI, 2) + ")" : ", though contralateral suppression was not met";
-    p = "The " + basis + " lateralization index of " + fmt(d.LI, d.LI >= 100 ? 0 : 1) + " is above the lateralizing threshold" + csiTxt + ". This may be consistent with unilateral aldosterone excess involving the " + sideLow(d.dominant) + " adrenal gland. These findings may be correlated with imaging and clinical context, and any management decision remains at the discretion of the treating clinician.";
-  } else {
-    cls = "bi"; vk = "Result · " + tlabel; h3 = "Non-lateralizing";
-    p = "The lateralization index (" + fmt(d.LI, d.LI >= 100 ? 0 : 1) + ") is below the lateralizing threshold. This may be more consistent with bilateral aldosterone secretion than with a single dominant gland. Interpretation and any management decision remain at the discretion of the treating clinician.";
-  }
-  const showCaveat = R.useMet && R.discord;
-  return (
-    <React.Fragment>
-      <div className={"verdict " + cls}>
-        <div className="vk">{vk}</div>
-        <h3>{h3}</h3>
-        <p>{p}</p>
-      </div>
-      {showCaveat && (
-        <div className="caveat">
-          <IconWarn />
-          <div className="ct"><b>Cortisol co-secretion caveat.</b> The aldosterone:cortisol indices disagree with the metanephrine indices. Autonomous cortisol production, present in roughly 15 to 30% of primary aldosteronism, inflates adrenal vein cortisol and can both mask true lateralization and lower the cortisol selectivity index. The indices highlighted above use the <b>metanephrine</b> reference, which is unaffected by cortisol secretion.</div>
-        </div>
-      )}
     </React.Fragment>
   );
 }
@@ -667,9 +398,7 @@ export default function App() {
   const [config, setConfig] = useState({ pre: true, post: true, cortisol: true, met: false });
   const [units, setUnits] = useState({ aldo: "ng/dL", cortisol: "µg/dL", met: "nmol/L" });
   const [values, setValues] = useState({});
-  const [pathwayTiming, setPathwayTiming] = useState("post");
-  const [pathwayManual, setPathwayManual] = useState(false);
-  const [copied, setCopied] = useState({ table: false, note: false });
+  const [copied, setCopied] = useState({ table: false });
 
   // Inject fonts once (works even if @import is stripped by a build step).
   useEffect(() => {
@@ -683,11 +412,9 @@ export default function App() {
   }, []);
 
   const toggleTiming = (key) => {
-    setPathwayManual(false);
     setConfig((c) => { const next = { ...c, [key]: !c[key] }; if (!next.pre && !next.post) return c; return next; });
   };
   const toggleRef = (key) => {
-    setPathwayManual(false);
     setConfig((c) => { const next = { ...c, [key]: !c[key] }; if (!next.cortisol && !next.met) return c; return next; });
   };
   const setUnit = (key, val) => setUnits((u) => ({ ...u, [key]: val }));
@@ -697,7 +424,6 @@ export default function App() {
     const target = config.post ? "post" : config.pre ? "pre" : null;
     if (!target) return;
     const data = { rav: { a: "271", c: "78", m: "0.69" }, lav: { a: "1270", c: "345", m: "24" }, periph: { a: "24", c: "27", m: "<0.2" } };
-    setPathwayManual(false);
     setValues((prev) => {
       const nv = { ...prev };
       ["rav", "lav", "periph"].forEach((s) => {
@@ -721,14 +447,6 @@ export default function App() {
   const tms = activeTimings(config);
   const anyData = tms.some((tm) => computeTiming(values, config, tm).hasData);
 
-  let effTiming = pathwayTiming;
-  if (!pathwayManual) {
-    const postHas = config.post && computeTiming(values, config, "post").hasData;
-    const preHas = config.pre && computeTiming(values, config, "pre").hasData;
-    effTiming = postHas ? "post" : preHas ? "pre" : tms[0];
-  }
-  if (!config[effTiming]) effTiming = tms[0];
-
   return (
     <div className="avs-root">
       <style>{CSS}</style>
@@ -737,7 +455,7 @@ export default function App() {
         <div className="wrap">
           <div className="eyebrow"><span className="tick" />Primary Aldosteronism</div>
           <h1 className="title">Adrenal Vein Sampling Interpretation Tool</h1>
-          <p className="subtitle">Enter adrenal vein and peripheral values to compute the <b>selectivity</b>, <b>lateralization</b> and <b>contralateral suppression</b> indices, then read a step by step interpretation.</p>
+          <p className="subtitle">Enter adrenal vein and peripheral values to compute the <b>selectivity</b>, <b>lateralization</b> and <b>contralateral suppression</b> indices, then ask a clinician experienced with AVS about the interpretation.</p>
         </div>
       </header>
 
@@ -762,7 +480,7 @@ export default function App() {
                 </div>
               </div>
             </div>
-            <p className="cfg-foot">A metanephrine reference may be preferred when autonomous cortisol secretion is identified by a positive 1&nbsp;mg dexamethasone suppression test.</p>
+            <p className="cfg-foot">Cases where there is autonomous cortisol secretion, defined by a positive 1&nbsp;mg dexamethasone suppression test, are at risk of false negatives or false lateralization, hence we recommend using metanephrines as the reference hormone and involving a clinician experienced with these cases.</p>
             <div className="unit-inline">
               {[["aldo", "Aldosterone"], ["cortisol", "Cortisol"], ["met", "Metanephrine"]].map(([key, label]) => (
                 <div className="fld" key={key}>
@@ -863,58 +581,8 @@ export default function App() {
           </div>
         </section>
 
-        {/* INTERPRETATION */}
-        <section className="card">
-          <div className="card-hd"><div><h2>Step-wise interpretation</h2></div></div>
-          <div className="card-bd">
-            {!anyData ? (
-              <EmptyState title="Awaiting values" sub="The interpretation builds automatically once aldosterone and reference values are entered." />
-            ) : (
-              (() => {
-                const T = computeTiming(values, config, effTiming);
-                const R = interpretResult(T);
-                const noteText = clinicalNote(ctx, T, effTiming, R);
-                return (
-                  <React.Fragment>
-                    {tms.length > 1 && (
-                      <div className="seg-wrap">
-                        <span>Interpret using</span>
-                        <div className="seg">
-                          {tms.map((tm) => (
-                            <button key={tm} className={effTiming === tm ? "on" : ""} onClick={() => { setPathwayTiming(tm); setPathwayManual(true); }}>{tm === "pre" ? "Pre-ACTH" : "Post-ACTH"}</button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {!T.hasData ? (
-                      <EmptyState title="No values for this sampling" sub="Switch timing or enter values above." />
-                    ) : (
-                      <React.Fragment>
-                        <div className="pathway">
-                          {StepSelectivity(T, effTiming, R)}
-                          {StepLateralization(T, R)}
-                          {StepCSI(T, R)}
-                        </div>
-                        {Verdict(T, effTiming, R)}
-                        {R.cls !== "incomplete" && (
-                          <div className="note-box">
-                            <div className="nb-hd">
-                              <span className="t">Clinical note</span>
-                              <button className={"btn-mini" + (copied.note ? " ok" : "")} onClick={() => copy(noteText, "note")}><IconCopy />{copied.note ? "Copied" : "Copy note"}</button>
-                            </div>
-                            <div className="nb-bd">{noteText}</div>
-                          </div>
-                        )}
-                      </React.Fragment>
-                    )}
-                  </React.Fragment>
-                );
-              })()
-            )}
-          </div>
-        </section>
-
         <footer>
+          <p className="thr"><b>Abbreviations.</b> ACTH, adrenocorticotropic hormone; IVC, inferior vena cava; SI, selectivity index; A:C, aldosterone-to-cortisol ratio; A:M, aldosterone-to-metanephrine ratio; LI, lateralization index; CSI, contralateral suppression index.</p>
           <p className="thr"><b>Thresholds.</b> Selectivity index: cortisol {">"}3 pre-ACTH or {">"}5 post-ACTH, metanephrine {">"}3. Lateralization index: cortisol {">"}4, metanephrine {">"}4.3. Contralateral suppression index {"<"}1.0.</p>
           <div className="disc">For education and clinical decision support only. It does not replace clinical judgement or local AVS protocols, and thresholds vary between centres. Confirm every calculation against your own laboratory values before acting.</div>
         </footer>
